@@ -1,0 +1,181 @@
+---
+title: "Final EDA"
+author: "Jon Zhang"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r Loading in Libraries}
+library(moments)
+library(utils)
+library(forecast)
+```
+
+
+### 1)Descriptive Stats: Exploratory Data Analysis (EDA) in RStudio and provide appropriate summary statistics / visualizations to help understand the spread of the disease (incidence) as well as its fatality rate. 
+
+
+```{r COVID-19 Data loaded in -> mydata}
+mydata <- read.csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv", na.strings = "", fileEncoding = "UTF-8-BOM")
+```
+
+
+```{r summary statistics of data}
+summary(mydata)
+str(mydata)
+```
+
+
+```{r Investigating Incidence of Disease and Fatality Rate}
+### investigating cases
+str(mydata$cases)
+summary(mydata$cases)
+
+mean(mydata$cases) # 1155.147
+sd(mydata$cases) # 6779.224
+sum(mydata$cases) # 71503614
+
+kurtosis(mydata$cases) # 367.2283
+skewness(mydata$cases) # 15.87011
+
+### investigating deaths
+str(mydata$deaths)
+summary(mydata$deaths)
+
+mean(mydata$deaths) # 26.05546
+sd(mydata$deaths) # 131.2271
+sum(mydata$deaths) # 1612833
+
+kurtosis(mydata$deaths) # 194.9561
+skewness(mydata$deaths) # 10.99204
+
+### deaths / cases should be the rate of death caused by illness
+death_ratio <- mydata$deaths / mydata$cases
+
+### initial call of death_ratio presents many null values, solution to turn those into 0s
+death_ratio[is.na(death_ratio)] = 0
+head(death_ratio)
+
+mydata$death_ratio <- death_ratio
+```
+
+```{r Histograms and plots of cases, deaths, and death rate}
+par(mfrow = c(1, 2))
+
+### histograms of cases and deaths
+hist(mydata$cases, xlab = "Cases", main = "Histogram of COVID-19 Cases")
+hist(mydata$deaths, xlab = "Deaths", main = "Histogram of COVID-19 Deaths", xlim = c(-500, 4000))
+
+### cases and deaths per month
+plot(mydata$month, mydata$cases, xlab = "Months", ylab = "Cases", main = "Scatter/Tree plot of cases/month")
+plot(mydata$month, mydata$deaths, xlab = "Months", ylab = "Deaths", main = "Scatter/Tree plot of deaths/month")
+
+### initial plot may seem confusing but it just seems that there was that many deaths...
+plot(mydata$death_ratio)
+```
+
+### 2)Inferential Stats: Pick 2 countries and compare their incidence and fatality rates using hypothesis testing and confidence interval methods in RStudio
+
+
+```{r Preparing the data for each country}
+### We want to compare two countries incidence and fatality rates, my method for testing incidence will be two-sided t-test.
+
+### We can choose two countries
+head(unique(mydata$countriesAndTerritories))
+
+### We will go with "Brazil" and "United_States_of_America." First we will need to do some filtering with the countries to make sure we aggregate on the appropriate parts of the data. Our solution for this is to save the countries into their own table with their respective cases and deaths.
+
+brazil <- mydata[mydata$countriesAndTerritories == 'Brazil',]
+usa <- mydata[mydata$countriesAndTerritories == 'United_States_of_America',]
+
+### We will conduct these tests with alpha level = 0.05 at 95% confidence
+
+head(brazil)
+head(usa)
+```
+
+
+```{r Hypothesis Testing}
+### 2-sided t-test for USA and Brazil testing for Incidence
+t.test(usa$cases, brazil$cases, alternative =  "two.sided", conf.level = 0.95)
+
+    ### Based on the results from the t-test testing for incidence above, the outcome of the p-value being 2.2 * 10^-16, which is a considerable amount smaller than our alpha value 0.05, we can reject our null hypothesis and therefore say there is significant difference between the incidence of these two countries USA and Brazil. The 95% confidence interval is shown to be (20954.14, 32501.87). This test supports our intuition as USA has had many more cases and deaths than Brazil.
+```
+```{r}
+### 2-sided t-test for USA and Brazil testing for Fatality Rate
+t.test(usa$death_ratio, brazil$death_ratio, alternative =  "two.sided", conf.level = 0.95)
+
+    ### Based on the results from the t-test testing for fatality rate above, the outcome of our p-value being 0.2761 is larger than our alpha value 0.05. Therefore, we cannot reject our null hypothesis in favor for our alternate hypothesis. We can also say that there is no significant difference between the fatality rates of the two countries USA and Brazil. The 95% confidence interval is shown to be (-0.006485744, 0.001855311). The results of this test are a little confusing as USA has approximately 327 million people and Brazil has around 210 million people. However, knowing that USA remains to have a split-stance on vaccinations and an overall careless view on the dangers of COVID-19, this statistic makes a little more sense to me. 
+```
+
+
+### 3)Correlation: Pick all the countries and evaluate the relationship between incidence rates and fatality rates. Compute the correlation coefficient, if relevant, in RStudio.
+
+
+```{r Plotting the relationship between incidence and death}
+### We can plot the relationship between incidence rate and fatality rate by aggregating on the cases and popData2019.
+
+incidence_ratio <- mydata$cases / mydata$popData2019
+
+plot(incidence_ratio, death_ratio, main = "Relationship between Incidence and Death Rates")
+
+    ### Immediately we can see that there doesn't appear to be a relationship between incidence and fatality rates, as the plot does not appear to be linear, geometric, log natural, etc... Therefore, I think we can expect for our correlation coefficient to be null.
+```
+
+
+```{r Finding the Correlation}
+cor.test(incidence_ratio, death_ratio, method = "pearson", alternative = "two.sided")
+
+### Based on the plot from the relationship between incidence and fatality, and the cor.test() above, the correlation coefficient is not computable.
+```
+
+### 4)Regression: Pick United States. Look at the time series of cases and time series of deaths. Use a regression model to predict the number of cases and the number of deaths for the next 5 days in the future. Use RStudio.
+
+
+```{r Converting dateRep into a numeric value via transformation}
+dates <- usa$dateRep
+dates <- as.Date(as.character(dates), format = "%d/%m/%y")
+
+usa$date_numeric <- as.numeric(dates)
+
+```
+
+
+```{r Preparing the Training/Testing splits}
+### Professor mentioned that 80/20 split is not necessary here and that I should model the data directly.
+
+#set.seed(42)
+#rows <- sample(nrow(usa))
+#usa_random <- usa[rows, ]
+
+#new_split <- round(nrow(usa_random) * .80)
+#training <- usa_random[1:new_split, ]
+#testing <- usa_random[(new_split + 1):nrow(usa_random), ]
+```
+
+
+```{r Creating the linear model trained on the training data for cases}
+model_cases <- lm(cases ~ date_numeric, data = usa)
+```
+```{r Creating the prediction trained on the testing data for cases}
+pred_cases <- predict(model_cases)
+head(pred_cases)
+```
+
+
+```{r Creating the linear model trained on the training data for deaths}
+model_deaths <- lm(deaths ~ date_numeric, data = usa)
+```
+```{r Creating the prediction trained on the testing data for deaths}
+pred_deaths <- predict(model_deaths)
+head(pred_deaths)
+```
+
+
+
+
